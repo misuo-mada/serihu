@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>読み合わせ台本ビューア</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    body {
+      font-family: 'sans-serif';
+      padding: 20px;
+      margin: 0;
+      transition: background 0.5s, color 0.5s;
+    }
+    h1 {
+      text-align: center;
+    }
+    #controls {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    button, select {
+      margin: 5px;
+      padding: 10px 15px;
+      font-size: 14px;
+    }
+    #scriptContainer {
+      max-width: 90%;
+      margin: auto;
+      padding: 20px;
+      border-radius: 10px;
+      transition: all 0.5s;
+      background-color: white;
+      color: black;
+    }
+    .line {
+      margin: 10px 0;
+      padding: 10px;
+      border-bottom: 1px dashed #aaa;
+      display: flex;
+      align-items: flex-start;
+    }
+    .role {
+      font-weight: bold;
+      margin-right: 10px;
+      white-space: nowrap;
+    }
+
+    .dialogue {
+      white-space: pre-wrap;
+      display: inline-block;
+      text-indent: 0;
+    }
+
+    .vertical {
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+    }
+
+    .balloon .dialogue {
+      background: #fff;
+      border: 2px solid #aaa;
+      border-radius: 12px;
+      padding: 10px;
+      margin-top: 5px;
+      display: inline-block;
+      min-width: 200px;
+    }
+
+    .theme-dark.balloon .dialogue {
+      background: #333;
+      color: #fff;
+      border: 2px solid #666;
+    }
+
+    /* テーマ定義 */
+    .theme-dark { background: #111; color: #fff; }
+    .theme-pop { background: #ffecec; color: #c71585; }
+    .theme-wafu { background: #f5f0e1; color: #5c3d2e; }
+    .theme-classic { background: #fff; color: #000; }
+
+    .theme-dark #scriptContainer { background: #222; color: #fff; }
+    .theme-pop #scriptContainer { background: #fff0f5; color: #c71585; }
+    .theme-wafu #scriptContainer { background: #fefaf0; color: #5c3d2e; }
+    .theme-classic #scriptContainer { background: #ffffff; color: #000; }
+
+    .font-gothic { font-family: 'Hiragino Kaku Gothic ProN', sans-serif; }
+    .font-mincho { font-family: 'Hiragino Mincho ProN', serif; }
+    .font-marugo { font-family: 'UD丸ゴシック体', sans-serif; }
+    .font-hand { font-family: 'Kosugi Maru', cursive; }
+
+    .size-small { font-size: 14px; }
+    .size-medium { font-size: 18px; }
+    .size-large { font-size: 24px; }
+
+    .color-white  .dialogue { color: white !important; }
+    .color-red    .dialogue { color: #ff4444 !important; }
+    .color-blue   .dialogue { color: #3399ff !important; }
+    .color-green  .dialogue { color: #33cc66 !important; }
+    .color-yellow .dialogue { color: #ffcc00 !important; }
+    .color-purple .dialogue { color: #aa66cc !important; }
+    .color-pink   .dialogue { color: #ff99cc !important; }
+    .color-orange .dialogue { color: #ff8844 !important; }
+    .color-cyan   .dialogue { color: #00dddd !important; }
+    .color-gray   .dialogue { color: #cccccc !important; }
+
+    .hidden-line {
+      display: none;
+    }
+
+    /* 🎬 フェードインアニメーション */
+    @keyframes fadeInUp {
+      0% {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .fade-in {
+      animation: fadeInUp 0.6s ease-out;
+    }
+  </style>
+</head>
+<body class="theme-dark font-gothic size-medium color-white">
+  <h1>📖 読み合わせ台本ビューア</h1>
+
+  <div id="controls">
+    <input type="file" id="fileInput" accept=".xlsx"><br>
+    <button onclick="toggleDirection()">縦書き / 横書き</button>
+    <button onclick="toggleBalloon()">💬 吹き出し切替</button>
+    <button onclick="cycleColor()">🎨 色切替</button>
+    <button onclick="saveAsImage()">📷 画像で保存（JPEG）</button><br>
+
+    <select onchange="setTheme(this.value)">
+      <option value="dark">ダーク</option>
+      <option value="pop">ポップ</option>
+      <option value="wafu">和風</option>
+      <option value="classic">クラシック</option>
+    </select>
+
+    <select onchange="setFont(this.value)">
+      <option value="gothic">ゴシック</option>
+      <option value="mincho">明朝</option>
+      <option value="marugo">丸ゴ</option>
+    </select>
+
+    <select onchange="setSize(this.value)">
+      <option value="small">小</option>
+      <option value="medium" selected>中</option>
+      <option value="large">大</option>
+    </select>
+  </div>
+
+  <div id="scriptContainer"></div>
+
+  <script>
+    const container = document.getElementById('scriptContainer');
+    let vertical = false;
+    let useBalloon = false;
+    let stepMode = false;
+    let stepIndex = 0;
+    let colorIndex = 0;
+    const colors = ['white', 'red', 'blue', 'green', 'yellow', 'purple', 'pink', 'orange', 'cyan', 'gray'];
+
+    document.getElementById('fileInput').addEventListener('change', function (e) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function (e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        container.innerHTML = "";
+        stepIndex = 0;
+
+        json.forEach((row, index) => {
+          if (index === 0) return;
+          if (row.length >= 2) {
+            const role = row[0];
+            const dialogueRaw = row[1];
+            const dialogueHTML = (dialogueRaw + '').replace(/\n/g, "<br>");
+
+            const lineEl = document.createElement('div');
+            lineEl.className = 'line';
+            if (stepMode) lineEl.classList.add('hidden-line');
+
+            const roleSpan = document.createElement('span');
+            roleSpan.className = 'role';
+            roleSpan.textContent = `${role}：`;
+
+            const dialogueSpan = document.createElement('span');
+            dialogueSpan.className = 'dialogue';
+            dialogueSpan.innerHTML = dialogueHTML;
+
+            lineEl.appendChild(roleSpan);
+            lineEl.appendChild(dialogueSpan);
+            container.appendChild(lineEl);
+          }
+        });
+
+        applyDirection();
+        applyBalloon();
+        if (stepMode) showNextLine();
+      };
+
+      reader.readAsArrayBuffer(file);
+    });
+
+    function toggleDirection() {
+      vertical = !vertical;
+      applyDirection();
+    }
+
+    function applyDirection() {
+      container.classList.toggle('vertical', vertical);
+    }
+
+    function toggleBalloon() {
+      useBalloon = !useBalloon;
+      applyBalloon();
+    }
+
+    function applyBalloon() {
+      if (useBalloon) {
+        container.classList.add('balloon');
+      } else {
+        container.classList.remove('balloon');
+      }
+    }
+
+    function setTheme(theme) {
+      document.body.className = document.body.className.replace(/theme-\w+/g, '');
+      document.body.classList.add('theme-' + theme);
+      applyBalloon();
+    }
+
+    function setFont(font) {
+      document.body.className = document.body.className.replace(/font-\w+/g, '');
+      document.body.classList.add('font-' + font);
+    }
+
+    function setSize(size) {
+      document.body.className = document.body.className.replace(/size-\w+/g, '');
+      document.body.classList.add('size-' + size);
+    }
+
+    function cycleColor() {
+      colorIndex = (colorIndex + 1) % colors.length;
+      document.body.className = document.body.className.replace(/color-\w+/g, '');
+      document.body.classList.add('color-' + colors[colorIndex]);
+    }
+
+    function toggleStepMode() {
+      stepMode = !stepMode;
+      const lines = document.querySelectorAll('.line');
+      lines.forEach((line, i) => {
+        line.classList.toggle('hidden-line', stepMode);
+      });
+      if (stepMode) {
+        stepIndex = 0;
+        showNextLine();
+      }
+    }
+
+    function showNextLine() {
+      const lines = document.querySelectorAll('.hidden-line');
+      if (stepIndex < lines.length) {
+        const line = lines[stepIndex];
+        line.classList.remove('hidden-line');
+        line.classList.add('fade-in');
+        setTimeout(() => {
+          line.classList.remove('fade-in');
+        }, 800);
+        stepIndex++;
+      }
+    }
+
+    function saveAsImage() {
+      html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: null
+      }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = '台本.jpg';
+        link.href = canvas.toDataURL('image/jpeg', 1.0);
+        link.click();
+      });
+    }
+
+    container.addEventListener('click', () => {
+      if (stepMode) showNextLine();
+    });
+  </script>
+</body>
+</html>
