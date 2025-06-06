@@ -33,6 +33,15 @@
       background-color: white;
       color: black;
     }
+    #roleColorSettings {
+      text-align: left;
+      max-width: 600px;
+      margin: 20px auto;
+      background: #ffffff; /* 白背景 */
+      color: #000000;      /* 黒文字 */
+      padding: 10px;
+      border-radius: 8px;
+    }
     .line {
       margin: 10px 0;
       padding: 10px;
@@ -45,18 +54,15 @@
       margin-right: 10px;
       white-space: nowrap;
     }
-
     .dialogue {
       white-space: pre-wrap;
       display: inline-block;
       text-indent: 0;
     }
-
     .vertical {
       writing-mode: vertical-rl;
       text-orientation: upright;
     }
-
     .balloon .dialogue {
       background: #fff;
       border: 2px solid #aaa;
@@ -66,29 +72,23 @@
       display: inline-block;
       min-width: 200px;
     }
-
     .theme-dark.balloon .dialogue {
       background: #333;
       color: #fff;
       border: 2px solid #666;
     }
-
-    /* テーマ定義 */
     .theme-dark { background: #111; color: #fff; }
     .theme-pop { background: #ffecec; color: #c71585; }
     .theme-wafu { background: #f5f0e1; color: #5c3d2e; }
     .theme-classic { background: #fff; color: #000; }
-
     .theme-dark #scriptContainer { background: #222; color: #fff; }
     .theme-pop #scriptContainer { background: #fff0f5; color: #c71585; }
     .theme-wafu #scriptContainer { background: #fefaf0; color: #5c3d2e; }
     .theme-classic #scriptContainer { background: #ffffff; color: #000; }
-
     .font-gothic { font-family: 'Hiragino Kaku Gothic ProN', sans-serif; }
     .font-mincho { font-family: 'Hiragino Mincho ProN', serif; }
     .font-marugo { font-family: 'UD丸ゴシック体', sans-serif; }
     .font-hand { font-family: 'Kosugi Maru', cursive; }
-
     .size-small { font-size: 14px; }
     .size-medium { font-size: 18px; }
     .size-large { font-size: 24px; }
@@ -104,24 +104,12 @@
     .color-cyan   .dialogue { color: #00dddd !important; }
     .color-gray   .dialogue { color: #cccccc !important; }
 
-    .hidden-line {
-      display: none;
-    }
-
-    /* 🎬 フェードインアニメーション */
+    .hidden-line { display: none; }
     @keyframes fadeInUp {
-      0% {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      100% {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      0% { opacity: 0; transform: translateY(20px); }
+      100% { opacity: 1; transform: translateY(0); }
     }
-    .fade-in {
-      animation: fadeInUp 0.6s ease-out;
-    }
+    .fade-in { animation: fadeInUp 0.6s ease-out; }
   </style>
 </head>
 <body class="theme-dark font-gothic size-medium color-white">
@@ -132,21 +120,19 @@
     <button onclick="toggleDirection()">縦書き / 横書き</button>
     <button onclick="toggleBalloon()">💬 吹き出し切替</button>
     <button onclick="cycleColor()">🎨 色切替</button>
+    <button onclick="assignRoleColors()">👤 キャラ別色割当</button>
     <button onclick="saveAsImage()">📷 画像で保存（JPEG）</button><br>
-
     <select onchange="setTheme(this.value)">
       <option value="dark">ダーク</option>
       <option value="pop">ポップ</option>
       <option value="wafu">和風</option>
       <option value="classic">クラシック</option>
     </select>
-
     <select onchange="setFont(this.value)">
       <option value="gothic">ゴシック</option>
       <option value="mincho">明朝</option>
       <option value="marugo">丸ゴ</option>
     </select>
-
     <select onchange="setSize(this.value)">
       <option value="small">小</option>
       <option value="medium" selected>中</option>
@@ -154,6 +140,7 @@
     </select>
   </div>
 
+  <div id="roleColorSettings"></div>
   <div id="scriptContainer"></div>
 
   <script>
@@ -163,7 +150,22 @@
     let stepMode = false;
     let stepIndex = 0;
     let colorIndex = 0;
-    const colors = ['white', 'red', 'blue', 'green', 'yellow', 'purple', 'pink', 'orange', 'cyan', 'gray'];
+
+    const colorList = [
+      { value: 'red', label: '赤' },
+      { value: 'blue', label: '青' },
+      { value: 'green', label: '緑' },
+      { value: 'yellow', label: '黄' },
+      { value: 'purple', label: '紫' },
+      { value: 'pink', label: 'ピンク' },
+      { value: 'orange', label: 'オレンジ' },
+      { value: 'cyan', label: 'シアン' },
+      { value: 'gray', label: 'グレー' },
+      { value: 'white', label: '白' }
+    ];
+
+    let roleColorMap = {};
+    let roleColorIndex = 0;
 
     document.getElementById('fileInput').addEventListener('change', function (e) {
       const file = e.target.files[0];
@@ -177,6 +179,8 @@
 
         container.innerHTML = "";
         stepIndex = 0;
+        roleColorMap = {};
+        roleColorIndex = 0;
 
         json.forEach((row, index) => {
           if (index === 0) return;
@@ -187,7 +191,7 @@
 
             const lineEl = document.createElement('div');
             lineEl.className = 'line';
-            if (stepMode) lineEl.classList.add('hidden-line');
+            lineEl.dataset.role = role;
 
             const roleSpan = document.createElement('span');
             roleSpan.className = 'role';
@@ -205,38 +209,77 @@
 
         applyDirection();
         applyBalloon();
-        if (stepMode) showNextLine();
+        document.getElementById('roleColorSettings').innerHTML = '';
       };
 
       reader.readAsArrayBuffer(file);
     });
 
-    function toggleDirection() {
-      vertical = !vertical;
-      applyDirection();
+    function assignRoleColors() {
+      const lines = container.querySelectorAll('.line');
+      const roleColorSettings = document.getElementById('roleColorSettings');
+      roleColorSettings.innerHTML = '<h3>🎨 キャラ別 色設定</h3>';
+      const roleSet = new Set();
+
+      lines.forEach(line => {
+        const role = line.dataset.role;
+        if (!roleColorMap[role]) {
+          roleColorMap[role] = colorList[roleColorIndex % colorList.length].value;
+          roleColorIndex++;
+        }
+        line.className = line.className.replace(/color-\w+/g, '').trim();
+        line.classList.add(`color-${roleColorMap[role]}`);
+        roleSet.add(role);
+      });
+
+      roleSet.forEach(role => {
+        const currentColor = roleColorMap[role];
+        const select = document.createElement('select');
+        colorList.forEach(c => {
+          const option = document.createElement('option');
+          option.value = c.value;
+          option.textContent = c.label;
+          if (c.value === currentColor) option.selected = true;
+          select.appendChild(option);
+        });
+        select.addEventListener('change', () => {
+          roleColorMap[role] = select.value;
+          updateRoleColors();
+        });
+
+        const label = document.createElement('label');
+        label.style.display = 'block';
+        label.style.margin = '5px 0';
+        label.innerHTML = `<strong>${role}</strong>：`;
+        label.appendChild(select);
+        roleColorSettings.appendChild(label);
+      });
     }
 
-    function applyDirection() {
+    function updateRoleColors() {
+      const lines = container.querySelectorAll('.line');
+      lines.forEach(line => {
+        const role = line.dataset.role;
+        if (roleColorMap[role]) {
+          line.className = line.className.replace(/color-\w+/g, '').trim();
+          line.classList.add(`color-${roleColorMap[role]}`);
+        }
+      });
+    }
+
+    function toggleDirection() {
+      vertical = !vertical;
       container.classList.toggle('vertical', vertical);
     }
 
     function toggleBalloon() {
       useBalloon = !useBalloon;
-      applyBalloon();
-    }
-
-    function applyBalloon() {
-      if (useBalloon) {
-        container.classList.add('balloon');
-      } else {
-        container.classList.remove('balloon');
-      }
+      container.classList.toggle('balloon', useBalloon);
     }
 
     function setTheme(theme) {
       document.body.className = document.body.className.replace(/theme-\w+/g, '');
       document.body.classList.add('theme-' + theme);
-      applyBalloon();
     }
 
     function setFont(font) {
@@ -250,34 +293,9 @@
     }
 
     function cycleColor() {
-      colorIndex = (colorIndex + 1) % colors.length;
+      colorIndex = (colorIndex + 1) % colorList.length;
       document.body.className = document.body.className.replace(/color-\w+/g, '');
-      document.body.classList.add('color-' + colors[colorIndex]);
-    }
-
-    function toggleStepMode() {
-      stepMode = !stepMode;
-      const lines = document.querySelectorAll('.line');
-      lines.forEach((line, i) => {
-        line.classList.toggle('hidden-line', stepMode);
-      });
-      if (stepMode) {
-        stepIndex = 0;
-        showNextLine();
-      }
-    }
-
-    function showNextLine() {
-      const lines = document.querySelectorAll('.hidden-line');
-      if (stepIndex < lines.length) {
-        const line = lines[stepIndex];
-        line.classList.remove('hidden-line');
-        line.classList.add('fade-in');
-        setTimeout(() => {
-          line.classList.remove('fade-in');
-        }, 800);
-        stepIndex++;
-      }
+      document.body.classList.add('color-' + colorList[colorIndex].value);
     }
 
     function saveAsImage() {
@@ -292,10 +310,6 @@
         link.click();
       });
     }
-
-    container.addEventListener('click', () => {
-      if (stepMode) showNextLine();
-    });
   </script>
 </body>
 </html>
